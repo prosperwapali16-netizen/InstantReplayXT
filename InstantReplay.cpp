@@ -23,6 +23,7 @@ rewrote and reused parts of https://github.com/obsproject/obs-studio/blob/master
 using namespace std;
 
 namespace fs = std::experimental::filesystem;
+string current_replay_path = "";
 
 static void ensure_directory_exists(std::string &path)
 {
@@ -117,7 +118,6 @@ void replayThread()
 					attempts = 0;
 					while ((attempts <= wait) && doReplay)
 					{
-						psleep(1000);
 						string replay_path="";
 						const char * cRP=NULL;
 						info("get_last_replay path attempt %d", attempts);
@@ -140,11 +140,13 @@ void replayThread()
 						}
 						cRP=NULL;
 						calldata_free(cd);
-						if (replay_path.empty())
+						if (replay_path.empty() || replay_path.compare(current_replay_path)==0)
 						{
-							info("get_last_replay path was empty on attempt %d", attempts);
+							info("get_last_replay attempt %d: path was empty or matching the previous replay %s", attempts, replay_path.c_str());
 
 							attempts++;
+							psleep(1000); //1 second wait only needed on failed attempts
+
 							if (attempts > wait)
 							{
 								doReplay = false;
@@ -180,21 +182,12 @@ void replayThread()
 								}
 							}
 
-							//Get Origin Scene
-							obs_source_t* original_scene = obs_frontend_get_current_scene();
-							if (original_scene == nullptr)
-							{
-								return;
-							}
-							const char *sceneUsedName = obs_source_get_name(original_scene);
-							obs_source_release(original_scene);
-
+							//Set media source file name:
 							//If the path is valid and the source exists, update it with the
-							//replay file to play back the replay. Otherwise, stop attempting to
-							//replay after max wait time
+							//replay file to play back the replay 
 							obs_source_t* replaysource = obs_get_source_by_name(get_replay_source_name().c_str());
 							if (replaysource != NULL)
-							{								
+							{
 								obs_data_t *settings = obs_data_create();
 								obs_data_set_string(settings, "local_file", replay_path.c_str());
 								obs_data_set_bool(settings, "is_local_file", true);
@@ -211,7 +204,17 @@ void replayThread()
 							}
 
 
-							//Switch to Replay
+							//Get Origin Scene
+							obs_source_t* original_scene = obs_frontend_get_current_scene();
+							if (original_scene == nullptr)
+							{
+								return;
+							}
+							const char *sceneUsedName = obs_source_get_name(original_scene);
+							obs_source_release(original_scene);
+
+
+							//Switch to Replay Scene
 							obs_source_t* replay_scene = obs_get_source_by_name(get_scene().c_str());
 							obs_frontend_set_current_scene(replay_scene);
 							obs_source_release(replay_scene);
@@ -255,6 +258,7 @@ void replayThread()
 								set_aux_mute(chan3, chan4, chan5);
 							}
 							doReplay = false;
+							current_replay_path = replay_path;
 							info("Successfully finished");
 						}
 					}
